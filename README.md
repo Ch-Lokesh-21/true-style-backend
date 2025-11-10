@@ -214,23 +214,243 @@ OpenAPI JSON: `http://localhost:8000/openapi.json`
 ## 12) Project Structure
 
 ```
-app/
-├─ api/
-│  ├─ routers/                 # all routers mounted from main.py
-│  └─ deps.py                  # get_current_user, require_permission, etc.
-├─ core/
-│  ├─ config.py                # Pydantic Settings (env)
-│  ├─ database.py              # Motor (Mongo), SQLAlchemy (Postgres)
-│  ├─ redis.py                 # Redis async wrapper + permission cache
-│  └─ security.py              # JWT/refresh, hashing
-├─ crud/                       # DB accessors per collection
-├─ schemas/                    # Pydantic models
-├─ services/                   # auth/users business logic, etc.
-├─ utils/                      # gridfs, crypto, mail, stamps, etc.
-├─ middleware/                 # RequestLoggingMiddleware
-└─ main.py                     # FastAPI app, cors, docs, router mounts
-scripts/
-└─ seed.py                     # indexes + seeding (RBAC, lookups, users)
+└──backend/
+    ├── .env
+    ├── .gitignore
+    ├── main.py
+    ├── README.md
+    ├── requirements.txt
+    ├── scripts/
+    │   ├── seed.py
+    │   ├── __init__.py
+    ├── app/
+    │   ├── main.py
+    │   ├── __init__.py
+    │   ├── utils/
+    │   │   ├── crypto.py
+    │   │   ├── fastapi_mail.py
+    │   │   ├── gridfs.py
+    │   │   ├── mongo.py
+    │   │   ├── tokens.py
+    │   │   └── __init__.py
+    │   ├── services/
+    │   │   ├── about.py
+    │   │   ├── address.py
+    │   │   ├── auth.py
+    │   │   ├── backup_logs.py
+    │   │   ├── brands.py
+    │   │   ├── cards_1.py
+    │   │   ├── cards_2.py
+    │   │   ├── card_details.py
+    │   │   ├── cart_items.py
+    │   │   ├── categories.py
+    │   │   ├── contact_us.py
+    │   │   ├── coupons.py
+    │   │   ├── coupons_status.py
+    │   │   ├── dashboard.py
+    │   │   ├── exchanges.py
+    │   │   ├── exchange_status.py
+    │   │   ├── faq.py
+    │   │   ├── files.py
+    │   │   ├── hero_images.py
+    │   │   ├── how_it_works.py
+    │   │   ├── logs.py
+    │   │   ├── log_writer.py
+    │   │   ├── occasions.py
+    │   │   ├── orders.py
+    │   │   ├── order_items.py
+    │   │   ├── order_status.py
+    │   │   ├── payments.py
+    │   │   ├── payment_status.py
+    │   │   ├── payment_types.py
+    │   │   ├── policies.py
+    │   │   ├── products.py
+    │   │   ├── product_images.py
+    │   │   ├── product_types.py
+    │   │   ├── restore_logs.py
+    │   │   ├── returns.py
+    │   │   ├── return_status.py
+    │   │   ├── review_status.py
+    │   │   ├── store_details.py
+    │   │   ├── terms_and_conditions.py
+    │   │   ├── testimonials.py
+    │   │   ├── upi_details.py
+    │   │   ├── users.py
+    │   │   ├── user_address.py
+    │   │   ├── user_ratings.py
+    │   │   ├── user_reviews.py
+    │   │   ├── user_roles.py
+    │   │   ├── user_status.py
+    │   │   └── wishlist_items.py
+    │   ├── schemas/
+    │   │   ├── about.py
+    │   │   ├── backup_logs.py
+    │   │   ├── brands.py
+    │   │   ├── cards_1.py
+    │   │   ├── cards_2.py
+    │   │   ├── card_details.py
+    │   │   ├── carts.py
+    │   │   ├── cart_items.py
+    │   │   ├── categories.py
+    │   │   ├── contact_us.py
+    │   │   ├── coupons.py
+    │   │   ├── coupons_status.py
+    │   │   ├── dashboard.py
+    │   │   ├── exchanges.py
+    │   │   ├── exchange_status.py
+    │   │   ├── faq.py
+    │   │   ├── hero_images.py
+    │   │   ├── how_it_works.py
+    │   │   ├── logs.py
+    │   │   ├── object_id.py
+    │   │   ├── occasions.py
+    │   │   ├── orders.py
+    │   │   ├── order_items.py
+    │   │   ├── order_status.py
+    │   │   ├── payments.py
+    │   │   ├── payment_status.py
+    │   │   ├── payment_types.py
+    │   │   ├── policies.py
+    │   │   ├── products.py
+    │   │   ├── product_images.py
+    │   │   ├── product_types.py
+    │   │   ├── requests.py
+    │   │   ├── responses.py
+    │   │   ├── restore_logs.py
+    │   │   ├── returns.py
+    │   │   ├── return_status.py
+    │   │   ├── review_status.py
+    │   │   ├── sessions.py
+    │   │   ├── store_details.py
+    │   │   ├── terms_and_conditions.py
+    │   │   ├── testimonials.py
+    │   │   ├── token_revocations.py
+    │   │   ├── upi_details.py
+    │   │   ├── users.py
+    │   │   ├── user_address.py
+    │   │   ├── user_ratings.py
+    │   │   ├── user_reviews.py
+    │   │   ├── user_roles.py
+    │   │   ├── user_status.py
+    │   │   ├── wishlists.py
+    │   │   ├── wishlist_items.py
+    │   │   └── __init__.py
+    │   ├── models/
+    │   │   ├── contact_us.py
+    │   │   ├── login_logs.py
+    │   │   ├── logout_logs.py
+    │   │   ├── register_logs.py
+    │   │   └── __init__.py
+    │   ├── middleware/
+    │   │   ├── error_handler.py
+    │   │   └── logging.py
+    │   ├── crud/
+    │   │   ├── about.py
+    │   │   ├── backup_logs.py
+    │   │   ├── brands.py
+    │   │   ├── cards_1.py
+    │   │   ├── cards_2.py
+    │   │   ├── card_details.py
+    │   │   ├── carts.py
+    │   │   ├── cart_items.py
+    │   │   ├── categories.py
+    │   │   ├── contact_us.py
+    │   │   ├── coupons.py
+    │   │   ├── coupons_status.py
+    │   │   ├── exchanges.py
+    │   │   ├── exchange_status.py
+    │   │   ├── faq.py
+    │   │   ├── hero_images.py
+    │   │   ├── how_it_works.py
+    │   │   ├── logs.py
+    │   │   ├── occasions.py
+    │   │   ├── orders.py
+    │   │   ├── order_items.py
+    │   │   ├── order_status.py
+    │   │   ├── payments.py
+    │   │   ├── payment_status.py
+    │   │   ├── payment_types.py
+    │   │   ├── policies.py
+    │   │   ├── products.py
+    │   │   ├── product_images.py
+    │   │   ├── product_types.py
+    │   │   ├── restore_logs.py
+    │   │   ├── returns.py
+    │   │   ├── return_status.py
+    │   │   ├── review_status.py
+    │   │   ├── sessions.py
+    │   │   ├── store_details.py
+    │   │   ├── terms_and_conditions.py
+    │   │   ├── testimonials.py
+    │   │   ├── token_revocations.py
+    │   │   ├── upi_details.py
+    │   │   ├── users.py
+    │   │   ├── user_address.py
+    │   │   ├── user_ratings.py
+    │   │   ├── user_reviews.py
+    │   │   ├── user_roles.py
+    │   │   ├── user_status.py
+    │   │   ├── wishlists.py
+    │   │   ├── wishlist_items.py
+    │   │   └── __init__.py
+    │   ├── core/
+    │   │   ├── config.py
+    │   │   ├── database.py
+    │   │   ├── redis.py
+    │   │   ├── security.py
+    │   │   └── __init__.py
+    │   └── api/
+    │       ├── deps.py
+    │       ├── __init__.py
+    │       └── routers/
+    │           ├── about.py
+    │           ├── address.py
+    │           ├── auth.py
+    │           ├── backup_logs.py
+    │           ├── brands.py
+    │           ├── cards_1.py
+    │           ├── cards_2.py
+    │           ├── card_details.py
+    │           ├── cart_items.py
+    │           ├── categories.py
+    │           ├── contact_us.py
+    │           ├── coupons.py
+    │           ├── coupons_status.py
+    │           ├── dashboard.py
+    │           ├── exchanges.py
+    │           ├── exchange_status.py
+    │           ├── faq.py
+    │           ├── files.py
+    │           ├── hero_images.py
+    │           ├── how_it_works.py
+    │           ├── logs.py
+    │           ├── occasions.py
+    │           ├── orders.py
+    │           ├── order_items.py
+    │           ├── order_status.py
+    │           ├── payments.py
+    │           ├── payment_status.py
+    │           ├── payment_types.py
+    │           ├── policies.py
+    │           ├── products.py
+    │           ├── product_images.py
+    │           ├── product_types.py
+    │           ├── restore_logs.py
+    │           ├── returns.py
+    │           ├── return_status.py
+    │           ├── review_status.py
+    │           ├── store_details.py
+    │           ├── terms_and_conditions.py
+    │           ├── testimonials.py
+    │           ├── upi_details.py
+    │           ├── users.py
+    │           ├── user_address.py
+    │           ├── user_ratings.py
+    │           ├── user_reviews.py
+    │           ├── user_roles.py
+    │           ├── user_status.py
+    │           ├── wishlist_items.py
+    │           └── __init__.py
 ```
 
 ---
@@ -332,12 +552,8 @@ All expose **POST /**, **GET /**, **GET /{id}**, **PUT /{id}**, **DELETE /{id}**
   - **GET /user-address/{id}**
   - **PUT /user-address/{id}**
   - **DELETE /user-address/{id}**
-- **/address** (utility collection if present; CRUD)
-  - **POST /address/**
-  - **GET /address/**
-  - **GET /address/{id}**
-  - **PUT /address/{id}**
-  - **DELETE /address/{id}**
+- **/address** 
+  - **GET /address/{pincode}**
 
 ### 13.12 Orders
 - **POST /orders/**
@@ -469,7 +685,5 @@ All expose **POST /**, **GET /**, **GET /{id}**, **PUT /{id}**, **DELETE /{id}**
 ## 17) License & Contact
 
 - **Author:** Lokesh Chirumamilla
-- **Email:** lokeshchirumamilla59@gmail.com
+- **Email:** lokeshchirumamilla2104@gmail.com
 - **Project:** True Style (FastAPI backend)
-
-This repository and documentation are provided for demonstration and educational purposes.
