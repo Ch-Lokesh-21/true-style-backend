@@ -121,10 +121,18 @@ Permissions stored in MongoDB:
 
 ```python
 @router.get(
-    "/users",
-    dependencies=[Depends(require_permission("users","Read","admin"))]
+    "/products",
+    dependencies=[Depends(require_permission("products","Read"))]
 )
 ```
+```python
+@router.get(
+    "/products",
+    dependencies=[Depends(require_permission("products","Create"))]
+)
+```
+
+
 
 `require_permission(resource, action, role=None)` validates:
 
@@ -227,9 +235,11 @@ async def list_orders(current=Depends(get_current_user)):
 ## Final Notes for Frontend Developers
 - Always attach `Authorization: Bearer <access_token>`
 - On 401 → call `/auth/token/refresh`
-- Do **NOT** store refresh tokens in browser storage
+- Do **NOT** store refresh tokens and access tokens in browser storage
+- Store the acess token in memory like for React - Context API, Angualr - Auth Service for easy state management
 
 ✅ Session model prevents stolen cookie reuse  
+
 ✅ OTP system prevents unauthorized password resets  
 
 ---
