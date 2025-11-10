@@ -13,8 +13,6 @@ from app.schemas.logs import LoginLogCreate, LogoutLogCreate, RegisterLogCreate
 # --------- CREATE ---------
 async def create_login_log(session: AsyncSession, payload: LoginLogCreate) -> LoginLogs:
     obj = LoginLogs(**payload.model_dump())
-    print(obj)
-    print("hello")
     session.add(obj)
     try:
         await session.commit()

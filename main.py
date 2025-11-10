@@ -1,22 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.error_handler import ErrorHandlerMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import db, Base, engine, close_engine, close_mongo_connection
 from app.core.redis import clear_permissions_cache, close_redis
 from fastapi.responses import HTMLResponse
-from app.api.routers import (
-    auth, users,
-    brands, product_types, occasions, categories, review_status, order_status,
-    return_status, exchange_status, payment_types, payment_status, coupons_status,
-    hero_images, cards_1, cards_2, how_it_works, testimonials, about, policies, faq,
-    terms_and_conditions, store_details, products, product_images, wishlist_items,
-    cart_items, user_address, orders, order_items, user_reviews, user_ratings,
-    returns, exchanges, payments, card_details, upi_details, coupons, 
-    backup_logs, restore_logs , files, address , contact_us, logs, dashboard
-)
-prefix = settings.API_V1_PREFIX
+from app import main
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -60,6 +51,11 @@ app.add_middleware(
 
 """Custom middle to print meta data of request and computation time for each request"""
 app.add_middleware(RequestLoggingMiddleware)
+
+app.add_middleware(ErrorHandlerMiddleware)
+
+
+app.include_router(main.router)
 
 
 """Over ridding inbuilt swagger/ui to add drop down for filtering routes based on tags"""
@@ -180,53 +176,7 @@ modal.querySelectorAll('*').forEach(el => {
 
 """Adding all the routes to FastAPI instance"""
 
-app.include_router(auth.router, prefix=f"{prefix}/auth", tags=["Auth"])
-app.include_router(users.router, prefix=f"{prefix}/users", tags=["Users"])
-app.include_router(files.router, prefix=f"{prefix}/files", tags=["Files"])
-app.include_router(brands.router, prefix=f"{prefix}/brands", tags=["Utility"])
-app.include_router(product_types.router, prefix=f"{prefix}/product-types", tags=["Utility","Product-Types"])
-app.include_router(occasions.router, prefix=f"{prefix}/occasions", tags=["Utility"])
-app.include_router(categories.router, prefix=f"{prefix}/categories", tags=["Utility"])
-app.include_router(review_status.router, prefix=f"{prefix}/review-status", tags=["Utility"])
-app.include_router(order_status.router, prefix=f"{prefix}/order-status", tags=["Utility"])
-app.include_router(return_status.router, prefix=f"{prefix}/return-status", tags=["Utility"])
-app.include_router(exchange_status.router, prefix=f"{prefix}/exchange-status", tags=["Utility"])
-app.include_router(payment_types.router, prefix=f"{prefix}/payment-types", tags=["Utility"])
-app.include_router(payment_status.router, prefix=f"{prefix}/payment-status", tags=["Utility"])
-app.include_router(coupons_status.router, prefix=f"{prefix}/coupons-status", tags=["Utility"])
 
-app.include_router(hero_images.router, prefix=f"{prefix}/hero-images", tags=["Content"])
-app.include_router(cards_1.router, prefix=f"{prefix}/cards-1", tags=["Content"])
-app.include_router(cards_2.router, prefix=f"{prefix}/cards-2", tags=["Content"])
-app.include_router(how_it_works.router, prefix=f"{prefix}/how-it-works", tags=["Content"])
-app.include_router(testimonials.router, prefix=f"{prefix}/testimonials", tags=["Content"])
-app.include_router(about.router, prefix=f"{prefix}/about", tags=["Content"])
-app.include_router(policies.router, prefix=f"{prefix}/policies", tags=["Content"])
-app.include_router(faq.router, prefix=f"{prefix}/faq", tags=["Content"])
-app.include_router(terms_and_conditions.router, prefix=f"{prefix}/terms", tags=["Content"])
-app.include_router(store_details.router, prefix=f"{prefix}/store-details", tags=["Content"])
-
-app.include_router(products.router, prefix=f"{prefix}/products", tags=["Products"])
-app.include_router(product_images.router, prefix=f"{prefix}/product-images", tags=["Products"])
-app.include_router(wishlist_items.router, prefix=f"{prefix}/wishlist-items", tags=["Wishlists"])
-app.include_router(cart_items.router, prefix=f"{prefix}/cart-items", tags=["Carts"])
-app.include_router(user_address.router, prefix=f"{prefix}/user-address", tags=["Users"])
-app.include_router(address.router, prefix=f"{prefix}/address", tags=["Users"])
-app.include_router(orders.router, prefix=f"{prefix}/orders", tags=["Orders"])
-app.include_router(order_items.router, prefix=f"{prefix}/order-items", tags=["Orders"])
-app.include_router(user_reviews.router, prefix=f"{prefix}/user-reviews", tags=["Reviews"])
-app.include_router(user_ratings.router, prefix=f"{prefix}/user-ratings", tags=["Ratings"])
-app.include_router(returns.router, prefix=f"{prefix}/returns", tags=["Returns"])
-app.include_router(exchanges.router, prefix=f"{prefix}/exchanges", tags=["Exchanges"])
-app.include_router(payments.router, prefix=f"{prefix}/payments", tags=["Payments"])
-app.include_router(card_details.router, prefix=f"{prefix}/card-details", tags=["Payments"])
-app.include_router(upi_details.router, prefix=f"{prefix}/upi-details", tags=["Payments"])
-app.include_router(coupons.router, prefix=f"{prefix}/coupons", tags=["Coupons"])
-app.include_router(backup_logs.router, prefix=f"{prefix}/backup-logs", tags=["Backup"])
-app.include_router(restore_logs.router, prefix=f"{prefix}/restore-logs", tags=["Restore"])
-app.include_router(contact_us.router, prefix=f"{prefix}/contact-us", tags=["Contact Us"])
-app.include_router(logs.router, prefix=f"{prefix}/logs", tags=["Logs"])
-app.include_router(dashboard.router, prefix=f"{prefix}/dashboard", tags=["Dashboard"])
 
 @app.get("/",tags=["Root"])
 async def root():
