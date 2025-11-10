@@ -108,7 +108,7 @@ async def token_refresh(
     "/logout",
     response_model=MessageOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(oauth2_scheme)]
+    dependencies=[Depends(get_current_user)]
 )
 async def logout(
     response: Response,

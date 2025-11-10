@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 import random
 
 from bson import ObjectId
-from fastapi import HTTPException, Depends, status, Request, Response, Cookie
+from fastapi import HTTPException, Depends, status, Request, Response
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db
 from app.core.security import (
@@ -35,8 +37,8 @@ from app.schemas.requests import (
     RegisterIn,
 )
 from app.utils.fastapi_mail import _send_mail, generate_otp_email_html
-# >>> CHANGED/ADDED (imports)
-from sqlalchemy.ext.asyncio import AsyncSession
+
+# logging helpers
 from app.services.log_writer import write_login_log, write_logout_log, write_register_log
 from app.schemas.logs import LoginLogCreate, LogoutLogCreate, RegisterLogCreate
 
@@ -45,29 +47,13 @@ from app.schemas.logs import LoginLogCreate, LogoutLogCreate, RegisterLogCreate
 # Helpers
 # -------------------------------------------------
 
-
 def _unix_to_dt(ts: int) -> datetime:
-    """
-    Convert a UNIX timestamp (int) into a timezone-aware UTC datetime.
-
-    Args:
-        ts (int): UNIX timestamp.
-
-    Returns:
-        datetime: Converted datetime in UTC.
-    """
+    """Convert UNIX timestamp to timezone-aware UTC datetime."""
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
 def _set_refresh_cookie(response: Response, token: str, exp_ts: int) -> None:
-    """
-    Attach refresh token to HTTP-only secure cookie.
-
-    Args:
-        response (Response): FastAPI response object.
-        token (str): Refresh token string.
-        exp_ts (int): Expiration timestamp for cookie.
-    """
+    """Attach refresh token to HTTP-only secure cookie."""
     max_age = settings.REFRESH_COOKIE_MAX_AGE_DAYS * 86400
     response.set_cookie(
         key=settings.REFRESH_COOKIE_NAME,
@@ -82,39 +68,41 @@ def _set_refresh_cookie(response: Response, token: str, exp_ts: int) -> None:
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    """
-    Deletes refresh-token cookie from client.
-
-    Args:
-        response (Response): FastAPI response used to delete cookie.
-    """
+    """Delete refresh-token cookie."""
     response.delete_cookie(
         key=settings.REFRESH_COOKIE_NAME,
         path=settings.REFRESH_COOKIE_PATH,
     )
 
 
+# ---------- Compensation helpers ----------
+
+async def _restore_last_login(user_id: ObjectId, old_value: Optional[datetime]):
+    """Restore last_login to the previous value (or unset if None)."""
+    if old_value is None:
+        await db["users"].update_one({"_id": user_id}, {"$unset": {"last_login": ""}})
+    else:
+        await db["users"].update_one({"_id": user_id}, {"$set": {"last_login": old_value}})
+
+
+async def _delete_user_safely(user_id: ObjectId):
+    """Delete a newly created user (register compensation)."""
+    await db["users"].delete_one({"_id": user_id})
+
+
 # -------------------------------------------------
-# Auth Services
+# Auth Services (with logical transactions)
 # -------------------------------------------------
 
-async def login_service(response: Response, request: Request, body: LoginIn, session: AsyncSession | None = None) -> LoginResponse:
+async def login_service(
+    response: Response,
+    request: Request,
+    body: LoginIn,
+    session: AsyncSession | None = None,
+) -> LoginResponse:
     """
-    Authenticate a user using email & password.
-
-    - Validates credentials
-    - Checks blocked status
-    - Creates a session
-    - Issues access & refresh tokens
-    - Stores refresh token as HTTP-only cookie
-
-    Returns:
-        LoginResponse: JWT access token and payload.
-
-    Raises:
-        HTTPException 401: Invalid credentials.
-        HTTPException 403: User is suspended.
-        HTTPException 500: Unexpected server error.
+    Authenticate a user; if any step after bumping last_login fails,
+    restore the original last_login (logical transaction).
     """
     try:
         email = body.email
@@ -126,81 +114,92 @@ async def login_service(response: Response, request: Request, body: LoginIn, ses
         if str(user["user_status_id"]) == str(user_status["_id"]):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "User account is suspended")
 
+        # Capture previous last_login for compensation
+        prev_last_login: Optional[datetime] = user.get("last_login")
+
         # Update last login timestamp
         await db["users"].update_one(
             {"_id": user["_id"]},
             {"$set": {"last_login": datetime.now(timezone.utc)}},
         )
 
-        wishlist = await db["wishlists"].find_one({"user_id": ObjectId(user["_id"])})
-        cart = await db["carts"].find_one({"user_id": ObjectId(user["_id"])})
+        # Downstream work – if any of this fails, we restore last_login
+        try:
+            wishlist = await db["wishlists"].find_one({"user_id": ObjectId(user["_id"])})
+            cart = await db["carts"].find_one({"user_id": ObjectId(user["_id"])})
 
-        payload = {
-            "user_id": str(user["_id"]),
-            "user_role_id": str(user["role_id"]),
-            "wishlist_id": str(wishlist["_id"]),
-            "cart_id": str(cart["_id"]),
-            "type": "access_payload",
-        }
-
-        at = create_access_token(payload)
-        rt = create_refresh_token(
-            {
-                "user_id": payload["user_id"],
-                "user_role_id": payload["user_role_id"],
-                "wishlist_id": payload["wishlist_id"],
-                "cart_id": payload["cart_id"],
+            payload = {
+                "user_id": str(user["_id"]),
+                "user_role_id": str(user["role_id"]),
+                "wishlist_id": str(wishlist["_id"]) if wishlist else None,
+                "cart_id": str(cart["_id"]) if cart else None,
+                "type": "access_payload",
             }
-        )
 
-        # Create session record
-        sess = {
-            "user_id": payload["user_id"],
-            "jti": rt["jti"],
-            "refresh_hash": hash_refresh(rt["token"]),
-            "exp": _unix_to_dt(rt["exp"]),
-            "ip": request.client.host if request.client else None,
-            "user_agent": request.headers.get("user-agent"),
-        }
-        await create_session(sess)
+            at = create_access_token(payload)
+            rt = create_refresh_token(
+                {
+                    "user_id": payload["user_id"],
+                    "user_role_id": payload["user_role_id"],
+                    "wishlist_id": payload["wishlist_id"],
+                    "cart_id": payload["cart_id"],
+                }
+            )
 
-        _set_refresh_cookie(response, rt["token"], rt["exp"])
-        await write_login_log(
-        LoginLogCreate(
-            user_id=str(user["_id"]),
-            first_name=user.get("first_name", ""),
-            last_name=user.get("last_name", ""),
-            email=user.get("email", ""),
-        ),
-        session=session,   # works with or without a passed-in session
-        )
-        return LoginResponse(
-            access_token=at["token"],
-            access_jti=at["jti"],
-            access_exp=at["exp"],
-            payload={
+            # Create session record (DB for refresh tokens)
+            sess = {
                 "user_id": payload["user_id"],
-                "user_role_id": payload["user_role_id"],
-                "wishlist_id": payload["wishlist_id"],
-                "cart_id": payload["cart_id"],
-            },
-        )
+                "jti": rt["jti"],
+                "refresh_hash": hash_refresh(rt["token"]),
+                "exp": _unix_to_dt(rt["exp"]),
+                "ip": request.client.host if request.client else None,
+                "user_agent": request.headers.get("user-agent"),
+            }
+            await create_session(sess)
+
+            _set_refresh_cookie(response, rt["token"], rt["exp"])
+
+            # Write login log
+            await write_login_log(
+                LoginLogCreate(
+                    user_id=str(user["_id"]),
+                    first_name=user.get("first_name", ""),
+                    last_name=user.get("last_name", ""),
+                    email=user.get("email", ""),
+                ),
+                session=session,
+            )
+
+            return LoginResponse(
+                access_token=at["token"],
+                access_jti=at["jti"],
+                access_exp=at["exp"],
+                payload={
+                    "user_id": payload["user_id"],
+                    "user_role_id": payload["user_role_id"],
+                    "wishlist_id": payload["wishlist_id"],
+                    "cart_id": payload["cart_id"],
+                },
+            )
+
+        except Exception as inner_err:
+            # COMPENSATE: restore last_login if anything failed after update
+            await _restore_last_login(user["_id"], prev_last_login)
+            raise inner_err
+
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal Server Error")
 
 
-async def register_service(payload: RegisterIn,session: AsyncSession | None = None) -> UserOut:
+async def register_service(
+    payload: RegisterIn,
+    session: AsyncSession | None = None,
+) -> UserOut:
     """
-    Register a new user.
-    - Ensures email and phone are unique
-    - Assigns default role + active status
-    - Hashes password
-    - Persists to DB
-
-    Returns:
-        UserOut: Newly created user record
+    Register a new user; if the register-log insertion fails,
+    delete the newly created user (logical transaction).
     """
     email = payload.email
     try:
@@ -233,17 +232,28 @@ async def register_service(payload: RegisterIn,session: AsyncSession | None = No
             user_status_id=status_doc["_id"],
             last_login=None,
         )
+
+        # Create user (Mongo) first; returns Pydantic UserOut
         new_user = await crud.create(doc)
-        await write_register_log(
-        RegisterLogCreate(
-            user_id=str(getattr(new_user, "id", None) or new_user.get("_id")),
-            first_name=getattr(new_user, "first_name", None) or new_user.get("first_name", ""),
-            last_name=getattr(new_user, "last_name", None) or new_user.get("last_name", ""),
-            email=getattr(new_user, "email", None) or new_user.get("email", ""),
-        ),
-        session=session,
-        )
+
+        try:
+            # Insert register log (Postgres)
+            await write_register_log(
+                RegisterLogCreate(
+                    user_id=str(new_user.id),
+                    first_name=new_user.first_name,
+                    last_name=new_user.last_name,
+                    email=new_user.email,
+                ),
+                session=session,
+            )
+        except Exception as log_err:
+            # COMPENSATE: delete the user we just created
+            await _delete_user_safely(ObjectId(str(new_user.id)))
+            raise log_err
+
         return new_user
+
     except HTTPException:
         raise
     except Exception:
@@ -251,16 +261,7 @@ async def register_service(payload: RegisterIn,session: AsyncSession | None = No
 
 
 async def refresh_token_service(response: Response, request: Request, rt: Optional[str]) -> TokenRotatedOut:
-    """
-    Rotate refresh token:
-    - Validate old refresh token & session
-    - Revoke old token
-    - Issue new access + refresh
-    - Set new HTTP-only cookie
-
-    Returns:
-        TokenRotatedOut: new access token details
-    """
+    """Rotate refresh token and set new cookie."""
     try:
         if not rt:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "No refresh cookie")
@@ -272,14 +273,14 @@ async def refresh_token_service(response: Response, request: Request, rt: Option
         if await is_revoked(payload.get("jti", "")):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token revoked")
 
-        session = await get_by_refresh_hash(hash_refresh(rt))
-        if not session:
+        sess_db = await get_by_refresh_hash(hash_refresh(rt))
+        if not sess_db:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session not found or revoked")
 
         # Revoke previous refresh
-        await revoke_session_by_jti(session["jti"], reason="refresh-used")
+        await revoke_session_by_jti(sess_db["jti"], reason="refresh-used")
         await add_revocation(
-            session["jti"],
+            sess_db["jti"],
             expiresAt=_unix_to_dt(payload["exp"]),
             reason="refresh-used",
         )
@@ -323,24 +324,16 @@ async def logout_service(
     request: Request,
     rt: Optional[str],
     access_token: Optional[str],
-    session: AsyncSession | None = None
+    session: AsyncSession | None = None,
 ) -> MessageOut:
-    """
-    Logout user:
-    - Revoke access token
-    - Revoke refresh token session
-    - Clear refresh cookie
-
-    Returns:
-        MessageOut: success message
-    """
-    user_id = None
+    """Logout; non-atomic per your requirement (no compensation)."""
     try:
         # Revoke access token
+        user_id: Optional[str] = None
         if access_token:
             ap = decode_access_token(access_token)
             if ap and ap.get("type") == "access":
-                user_id=ap.get("user_id")
+                user_id = ap.get("user_id")
                 await add_revocation(
                     ap.get("jti", ""),
                     expiresAt=_unix_to_dt(ap["exp"]),
@@ -349,28 +342,30 @@ async def logout_service(
 
         # Revoke refresh token
         if rt:
-            payload = decode_refresh_token(rt)
-            if payload and payload.get("type") == "refresh":
-                session = await get_by_refresh_hash(hash_refresh(rt))
-                if session:
-                    await revoke_session_by_jti(session["jti"], reason="logout-refresh")
+            rp = decode_refresh_token(rt)
+            if rp and rp.get("type") == "refresh":
+                sess_db = await get_by_refresh_hash(hash_refresh(rt))
+                if sess_db:
+                    await revoke_session_by_jti(sess_db["jti"], reason="logout-refresh")
                     await add_revocation(
-                        session["jti"],
-                        expiresAt=_unix_to_dt(payload["exp"]),
+                        sess_db["jti"],
+                        expiresAt=_unix_to_dt(rp["exp"]),
                         reason="logout-refresh",
                     )
+
+        # Write logout log if we can resolve the user
         if user_id:
             udoc = await db["users"].find_one({"_id": ObjectId(user_id)})
-        if udoc:
-            await write_logout_log(
-                LogoutLogCreate(
-                    user_id=str(udoc["_id"]),
-                    first_name=udoc.get("first_name", ""),
-                    last_name=udoc.get("last_name", ""),
-                    email=udoc.get("email", ""),
-                ),
-                session=session,
-            )
+            if udoc:
+                await write_logout_log(
+                    LogoutLogCreate(
+                        user_id=str(udoc["_id"]),
+                        first_name=udoc.get("first_name", ""),
+                        last_name=udoc.get("last_name", ""),
+                        email=udoc.get("email", ""),
+                    ),
+                    session=session,
+                )
 
         _clear_refresh_cookie(response)
         return MessageOut(message="Logged out successfully")
@@ -381,14 +376,7 @@ async def logout_service(
 
 
 async def change_password_service(current=Depends(get_current_user), body: ChangePasswordIn = ...) -> MessageOut:
-    """
-    Change user password:
-    - Verify old password
-    - Hash & store new password
-
-    Returns:
-        MessageOut: success confirmation
-    """
+    """Change password."""
     try:
         user = await db["users"].find_one({"_id": ObjectId(current["user_id"])})
         if not user or not verify_password(body.old_password, user.get("password", "")):
@@ -406,12 +394,7 @@ async def change_password_service(current=Depends(get_current_user), body: Chang
 
 
 async def forgot_password_request_service(body: ForgotPasswordRequestIn) -> MessageOut:
-    """
-    Generate OTP and send email to user for password reset.
-
-    Returns:
-        MessageOut: OTP sent confirmation
-    """
+    """Generate OTP and email it for password reset."""
     try:
         email = body.email
         user = await db["users"].find_one({"email": email})
@@ -429,12 +412,7 @@ async def forgot_password_request_service(body: ForgotPasswordRequestIn) -> Mess
 
 
 async def forgot_password_verify_service(body: ForgotPasswordVerifyIn) -> MessageOut:
-    """
-    Verify OTP and reset user password.
-
-    Returns:
-        MessageOut: password reset success message
-    """
+    """Verify OTP and reset password."""
     try:
         email = body.email
         user = await db["users"].find_one({"email": email, "otp": body.otp})
