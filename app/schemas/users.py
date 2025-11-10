@@ -24,13 +24,6 @@ class UserBase(BaseModel):
     otp: Optional[OtpInt] = None
     last_login: Optional[datetime] = None
 
-    @field_validator("role_id")
-    @classmethod
-    def role_id_is_objectid(cls, v: str) -> str:
-        if not ObjectId.is_valid(v):
-            raise ValueError("role_id must be a valid Mongo ObjectId string.")
-        return v
-
 # ---------------------- Create / Update / Output ----------------------
 class UserCreate(UserBase):
     password: str

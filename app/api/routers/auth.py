@@ -14,7 +14,8 @@ from __future__ import annotations
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Response, Cookie, status
 from fastapi.security import OAuth2PasswordRequestForm
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_session
 from app.core.security import oauth2_scheme
 from app.core.config import settings
 from app.api.deps import get_current_user
@@ -41,7 +42,7 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterIn):
+async def register(payload: RegisterIn, session: AsyncSession = Depends(get_session),):
     """
     Register a new user account.
 
@@ -51,7 +52,7 @@ async def register(payload: RegisterIn):
     Returns:
         UserOut: Created user object.
     """
-    return await register_service(payload)
+    return await register_service(payload,session)
 
 
 @router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
@@ -59,7 +60,8 @@ async def login(
     response: Response,
     request: Request,
     body: LoginIn | None = None,
-    form_data: OAuth2PasswordRequestForm = Depends()
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session: AsyncSession = Depends(get_session)
 ):
     """
     Authenticate user credentials and issue access + refresh tokens.
@@ -79,7 +81,7 @@ async def login(
     """
     if body is None:
         body = LoginIn(email=form_data.username, password=form_data.password)
-    return await login_service(response, request, body)
+    return await login_service(response, request, body,session)
 
 
 @router.post("/token/refresh", response_model=TokenRotatedOut, status_code=status.HTTP_200_OK)
@@ -106,13 +108,14 @@ async def token_refresh(
     "/logout",
     response_model=MessageOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(oauth2_scheme)],
+    dependencies=[Depends(oauth2_scheme)]
 )
 async def logout(
     response: Response,
     request: Request,
     token: str = Depends(oauth2_scheme),
-    rt: Optional[str] = Cookie(default=None, alias=settings.REFRESH_COOKIE_NAME)
+    rt: Optional[str] = Cookie(default=None, alias=settings.REFRESH_COOKIE_NAME),
+    session: AsyncSession = Depends(get_session)
 ):
     """
     Logout user by revoking access + refresh tokens and clearing cookie.
@@ -126,7 +129,7 @@ async def logout(
     Returns:
         MessageOut: Confirmation message.
     """
-    return await logout_service(response, request, rt, token)
+    return await logout_service(response, request, rt, token,session)
 
 
 @router.post(

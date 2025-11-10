@@ -71,7 +71,7 @@ async def list_login_logs(
 
 @router.delete(
     "/login/{log_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_permission("login_logs","Delete"))]
 )
 async def delete_login_log(
@@ -132,7 +132,7 @@ async def list_logout_logs(
 
 @router.delete(
     "/logout/{log_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_permission("logout_logs","Delete"))]
 )
 async def delete_logout_log(
@@ -193,7 +193,7 @@ async def list_register_logs(
 
 @router.delete(
     "/register/{log_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_permission("register_logs","Delete"))]
 )
 async def delete_register_log(

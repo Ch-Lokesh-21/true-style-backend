@@ -35,6 +35,10 @@ from app.schemas.requests import (
     RegisterIn,
 )
 from app.utils.fastapi_mail import _send_mail, generate_otp_email_html
+# >>> CHANGED/ADDED (imports)
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.log_writer import write_login_log, write_logout_log, write_register_log
+from app.schemas.logs import LoginLogCreate, LogoutLogCreate, RegisterLogCreate
 
 
 # -------------------------------------------------
@@ -94,7 +98,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 # Auth Services
 # -------------------------------------------------
 
-async def login_service(response: Response, request: Request, body: LoginIn) -> LoginResponse:
+async def login_service(response: Response, request: Request, body: LoginIn, session: AsyncSession | None = None) -> LoginResponse:
     """
     Authenticate a user using email & password.
 
@@ -161,7 +165,15 @@ async def login_service(response: Response, request: Request, body: LoginIn) -> 
         await create_session(sess)
 
         _set_refresh_cookie(response, rt["token"], rt["exp"])
-
+        await write_login_log(
+        LoginLogCreate(
+            user_id=str(user["_id"]),
+            first_name=user.get("first_name", ""),
+            last_name=user.get("last_name", ""),
+            email=user.get("email", ""),
+        ),
+        session=session,   # works with or without a passed-in session
+        )
         return LoginResponse(
             access_token=at["token"],
             access_jti=at["jti"],
@@ -179,7 +191,7 @@ async def login_service(response: Response, request: Request, body: LoginIn) -> 
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal Server Error")
 
 
-async def register_service(payload: RegisterIn) -> UserOut:
+async def register_service(payload: RegisterIn,session: AsyncSession | None = None) -> UserOut:
     """
     Register a new user.
     - Ensures email and phone are unique
@@ -221,7 +233,17 @@ async def register_service(payload: RegisterIn) -> UserOut:
             user_status_id=status_doc["_id"],
             last_login=None,
         )
-        return await crud.create(doc)
+        new_user = await crud.create(doc)
+        await write_register_log(
+        RegisterLogCreate(
+            user_id=str(getattr(new_user, "id", None) or new_user.get("_id")),
+            first_name=getattr(new_user, "first_name", None) or new_user.get("first_name", ""),
+            last_name=getattr(new_user, "last_name", None) or new_user.get("last_name", ""),
+            email=getattr(new_user, "email", None) or new_user.get("email", ""),
+        ),
+        session=session,
+        )
+        return new_user
     except HTTPException:
         raise
     except Exception:
@@ -301,6 +323,7 @@ async def logout_service(
     request: Request,
     rt: Optional[str],
     access_token: Optional[str],
+    session: AsyncSession | None = None
 ) -> MessageOut:
     """
     Logout user:
@@ -311,11 +334,13 @@ async def logout_service(
     Returns:
         MessageOut: success message
     """
+    user_id = None
     try:
         # Revoke access token
         if access_token:
             ap = decode_access_token(access_token)
             if ap and ap.get("type") == "access":
+                user_id=ap.get("user_id")
                 await add_revocation(
                     ap.get("jti", ""),
                     expiresAt=_unix_to_dt(ap["exp"]),
@@ -334,6 +359,18 @@ async def logout_service(
                         expiresAt=_unix_to_dt(payload["exp"]),
                         reason="logout-refresh",
                     )
+        if user_id:
+            udoc = await db["users"].find_one({"_id": ObjectId(user_id)})
+        if udoc:
+            await write_logout_log(
+                LogoutLogCreate(
+                    user_id=str(udoc["_id"]),
+                    first_name=udoc.get("first_name", ""),
+                    last_name=udoc.get("last_name", ""),
+                    email=udoc.get("email", ""),
+                ),
+                session=session,
+            )
 
         _clear_refresh_cookie(response)
         return MessageOut(message="Logged out successfully")
