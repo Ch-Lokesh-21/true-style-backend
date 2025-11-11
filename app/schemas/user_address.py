@@ -45,6 +45,13 @@ class UserAddressBase(BaseModel):
 
     model_config = {"extra": "ignore"}
 
+class UserAddressEntry(BaseModel):
+    mobile_no: MobileStr
+    postal_code: PinCode
+    country: Text120
+    state: Text120
+    city: Text120
+    address: AddrStr
 
 class UserAddressCreate(UserAddressBase):
     pass

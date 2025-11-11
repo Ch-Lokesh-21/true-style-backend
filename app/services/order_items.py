@@ -5,7 +5,7 @@ Service layer for Order Items.
 
 from __future__ import annotations
 from typing import List, Optional, Dict, Any
-
+from bson import ObjectId
 from fastapi import HTTPException
 
 from app.schemas.object_id import PyObjectId
@@ -24,7 +24,7 @@ async def list_my_items_service(
     List order-items that belong to the current user, with optional order/product filters.
     """
     try:
-        q: Dict[str, Any] = {"user_id": current_user["user_id"]}
+        q: Dict[str, Any] = {"user_id": ObjectId(current_user["user_id"])}
         if order_id is not None:
             q["order_id"] = order_id
         if product_id is not None:

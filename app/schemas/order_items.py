@@ -11,6 +11,7 @@ Size = Annotated[str, Field(min_length=1, max_length=50, description="Size label
 
 class OrderItemsBase(BaseModel):
     order_id: PyObjectId
+    user_id: PyObjectId
     product_id: PyObjectId
     quantity: Optional[Qty] = None
     size: Optional[Size] = None
@@ -30,25 +31,6 @@ class OrderItemsBase(BaseModel):
 
 class OrderItemsCreate(OrderItemsBase):
     pass
-
-
-class OrderItemsUpdate(BaseModel):
-    order_id: Optional[PyObjectId] = None
-    product_id: Optional[PyObjectId] = None
-    quantity: Optional[Qty] = None
-    size: Optional[Size] = None
-    user_id: Optional[PyObjectId] = None
-
-    @field_validator("size", mode="before")
-    @classmethod
-    def _trim_size(cls, v):
-        if isinstance(v, str):
-            v = v.strip()
-            if v == "":
-                raise ValueError("size must not be empty when provided.")
-        return v
-
-    model_config = {"extra": "ignore"}
 
 
 class OrderItemsOut(OrderItemsBase):

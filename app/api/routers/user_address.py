@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import require_permission, get_current_user
 from app.schemas.object_id import PyObjectId
-from app.schemas.user_address import UserAddressCreate, UserAddressUpdate, UserAddressOut
+from app.schemas.user_address import UserAddressCreate, UserAddressUpdate, UserAddressOut, UserAddressEntry
 from app.services.user_address import (
     create_user_address,
     list_user_addresses,
@@ -25,7 +25,7 @@ router = APIRouter()  # main.py mounts with: app.include_router(router, prefix="
     dependencies=[Depends(require_permission("user_address", "Create"))],
 )
 async def create_item(
-    payload: UserAddressCreate,
+    payload: UserAddressEntry,
     current_user: Dict = Depends(get_current_user),
 ):
     return await create_user_address(payload=payload, current_user=current_user)

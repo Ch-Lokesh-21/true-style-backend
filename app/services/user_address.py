@@ -5,21 +5,27 @@ from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.schemas.object_id import PyObjectId
-from app.schemas.user_address import UserAddressCreate, UserAddressUpdate, UserAddressOut
+from app.schemas.user_address import UserAddressEntry,UserAddressCreate, UserAddressUpdate, UserAddressOut
 from app.crud import user_address as crud
 
 
-async def create_user_address(payload: UserAddressCreate, current_user: Dict) -> UserAddressOut:
+async def create_user_address(payload: UserAddressEntry, current_user: Dict) -> UserAddressOut:
     try:
-        item_user_id = str(payload.user_id)
         current_user_id = str(current_user.get("user_id", ""))
 
         if not current_user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-        if current_user_id != item_user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        item = UserAddressCreate(
+            user_id=current_user_id,
+            city=payload.city,
+            country=payload.country,
+            state=payload.state,
+            mobile_no=payload.mobile_no,
+            postal_code=payload.postal_code,
+            address=payload.address
+        )
 
-        return await crud.create(payload)
+        return await crud.create(item)
     except HTTPException:
         raise
     except Exception as e:

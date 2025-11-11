@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     VALIDATE_CERTS: bool = True
 
     REFRESH_COOKIE_NAME: str 
-    REFRESH_COOKIE_PATH: str 
     REFRESH_COOKIE_SECURE: bool 
     REFRESH_COOKIE_SAMESITE: str 
     REFRESH_COOKIE_MAX_AGE_DAYS: int 

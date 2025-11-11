@@ -173,7 +173,7 @@ async def create_exchange_service(
     _ensure_within_7_days(delivery_date)
 
     # 5) Resolve exchange_status = "requested"
-    requested_status_id = await _get_exchange_status_id_by_label("requested")
+    requested_status_id = await _get_exchange_status_id_by_label("approved")
 
     # 6) Handle image
     final_url: Optional[str] = None

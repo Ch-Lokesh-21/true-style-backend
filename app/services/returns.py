@@ -93,7 +93,7 @@ async def _already_returned_qty(order_id: ObjectId, product_id: ObjectId) -> int
     """
     pipeline = [
         {"$match": {"order_id": order_id, "product_id": product_id}},
-        {"$group": {"__id": None, "q": {"$sum": {"$ifNull": ["$quantity", 0]}}}},
+        {"$group": {"_id": None, "q": {"$sum": {"$ifNull": ["$quantity", 0]}}}},
     ]
     total = 0
     async for row in db["returns"].aggregate(pipeline):
@@ -227,7 +227,7 @@ async def create_return_service(
         _, final_url = await upload_image(image)
 
     # Status: requested
-    status_id = await _get_status_id("requested")
+    status_id = await _get_status_id("approved")
 
     payload = ReturnsCreate(
         order_id=order_id,

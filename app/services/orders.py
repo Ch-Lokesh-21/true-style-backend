@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 import re
 import secrets
-
+from datetime import date, timedelta
 from bson import ObjectId
 from pymongo import ReturnDocument
 from fastapi import HTTPException
@@ -95,7 +95,6 @@ def _require_upi_details(upi_id: Optional[str]) -> str:
 # ----------------- services -----------------
 
 async def place_order_service(
-    user_id: PyObjectId,
     address_id: PyObjectId,
     payment_type_id: PyObjectId,
     card_name: Optional[str],
@@ -111,9 +110,7 @@ async def place_order_service(
     - Create order, move cart_items → order_items, create payment (+ details).
     - Clear cart_items.
     """
-    # owner check: user can only place own order
-    if str(current_user.get("user_id", "")) != str(user_id):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    user_id = current_user["user_id"]
 
     user_oid = _to_oid(user_id, "user_id")
     addr_doc = await _get_address_for_user(address_id, user_id)
@@ -140,8 +137,8 @@ async def place_order_service(
     # Gather cart + items (outside txn); writes happen inside txn
     cart, items = await _get_cart_and_items_for_user(user_oid)
 
-    # Initial order status must be 'placed'
-    order_status_doc = await db["order_status"].find_one({"status": "placed"})
+    # Accept orders automatically 
+    order_status_doc = await db["order_status"].find_one({"status": "confirmed"})
     if not order_status_doc:
         raise HTTPException(status_code=500, detail="Order status 'placed' not found")
 
@@ -184,16 +181,19 @@ async def place_order_service(
                 order_total += price * qty
 
             order_total = round(order_total, 2)
-
+            delivery_date = (date.today() + timedelta(days=3))
             # B) Create order
             order_payload = OrdersCreate(
                 user_id=user_id,
                 address=order_address,
                 status_id=order_status_doc["_id"],
                 total=order_total,
+                delivery_date=delivery_date,
                 delivery_otp=None,
             )
             order_doc = stamp_create(order_payload.model_dump(mode="python"))
+            if isinstance(order_doc.get("delivery_date"), date):
+                order_doc["delivery_date"] = datetime.combine(order_doc["delivery_date"], datetime.min.time())
             order_res = await db["orders"].insert_one(order_doc, session=session)
             order_id = order_res.inserted_id
 
@@ -220,7 +220,7 @@ async def place_order_service(
                 "payment_types_id": ObjectId(str(payment_type_id)),
                 "payment_status_id": payment_status_id,
                 "invoice_no": f"INV-{order_id}",
-                "delivery_fee": 0.0,
+                "delivery_fee": 30,
                 "amount": order_total,
             })
             pay_res = await db["payments"].insert_one(payment_doc, session=session)
@@ -307,37 +307,188 @@ async def admin_get_order_service(order_id: PyObjectId) -> OrdersOut:
         raise HTTPException(status_code=500, detail=f"Failed to get order: {e}")
 
 
+async def _get_status_id(slug: str) -> ObjectId:
+    doc = await db["order_status"].find_one({"slug": slug}, {"_id": 1})
+    if not doc:
+        raise HTTPException(status_code=500, detail=f"Order status '{slug}' is not seeded")
+    return doc["_id"]
+
 async def update_my_order_status_service(
     order_id: PyObjectId,
     payload: OrdersUpdate,
     current_user: Dict[str, Any],
 ) -> OrdersOut:
     """
-    User updates their own order status.
-
-    Requires:
-        payload.status_id not None
+    User can cancel their own order only when the current status is one of:
+    'placed', 'confirmed', 'packed'. Target status is forced to 'cancelled'.
     """
     try:
-        if payload.status_id is None:
-            raise HTTPException(status_code=400, detail="status_id is required")
-        order = await orders_crud.get_one(order_id)
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        if str(order.user_id) != str(current_user["user_id"]):
-            raise HTTPException(status_code=403, detail="Forbidden")
+        user_id = ObjectId(str(current_user["user_id"]))
 
-        updated = await orders_crud.update_one(order_id, payload)
-        if not updated:
-            raise HTTPException(status_code=404, detail="Order not found or not updated")
-        return updated
+        # Resolve lookup ids once (or cache globally on startup)
+        PLACED_ID     = await _get_status_id("placed")
+        CONFIRMED_ID  = await _get_status_id("confirmed")
+        PACKED_ID     = await _get_status_id("packed")
+        CANCELLED_ID  = await _get_status_id("cancelled")
+
+        allowed_current = [PLACED_ID, CONFIRMED_ID, PACKED_ID]
+
+        # Enforce: only transition to CANCELLED, and only by the owner,
+        # and only if current status is in allowed_current.
+        updated_doc = await db["orders"].find_one_and_update(
+            {
+                "_id": order_id,
+                "user_id": user_id,
+                "status_id": {"$in": allowed_current},
+            },
+            {
+                "$set": {
+                    "status_id": CANCELLED_ID,
+                    "updatedAt": datetime.now(timezone.utc),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+
+        if not updated_doc:
+            # Determine a precise error for better DX
+            # (1) Does the order exist?
+            order = await db["orders"].find_one({"_id": order_id}, {"user_id": 1, "status_id": 1})
+            if not order:
+                raise HTTPException(status_code=404, detail="Order not found")
+            if str(order["user_id"]) != str(user_id):
+                raise HTTPException(status_code=403, detail="Forbidden")
+            # status not allowed to cancel
+            raise HTTPException(
+                status_code=409,
+                detail="Order cannot be cancelled at its current status",
+            )
+
+        # Map back to your Pydantic schema
+        return OrdersOut.model_validate(updated_doc)
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update order: {e}")
 
+# ----------------- admin list with filters -----------------
 
-async def admin_update_order_status_service(order_id: PyObjectId, payload: OrdersUpdate) -> OrdersOut:
+from typing import Optional, List, Dict, Any
+from datetime import datetime, date, time, timezone
+from pymongo import ASCENDING, DESCENDING
+
+def _start_of_day(d: date) -> datetime:
+    return datetime.combine(d, time.min).replace(tzinfo=timezone.utc)
+
+def _end_of_day(d: date) -> datetime:
+    return datetime.combine(d, time.max).replace(tzinfo=timezone.utc)
+
+async def admin_list_orders_service(
+    *,
+    skip: int = 0,
+    limit: int = 20,
+    # filters
+    user_id: Optional[PyObjectId] = None,
+    status_id: Optional[PyObjectId] = None,
+    payment_type_id: Optional[PyObjectId] = None,
+    created_from: Optional[date] = None,
+    created_to: Optional[date] = None,
+    delivery_from: Optional[date] = None,
+    delivery_to: Optional[date] = None,
+    min_total: Optional[float] = None,
+    max_total: Optional[float] = None,
+    q: Optional[str] = None,            # search invoice_no / address.mobile_no
+    # sorting: "createdAt", "-createdAt", "total", "-total", "delivery_date", "-delivery_date"
+    sort: Optional[str] = "-createdAt",
+) -> List[OrdersOut]:
+    """
+    Admin: list orders with rich, optional filters.
+    - Pagination: skip, limit
+    - Filters: user_id, status_id, payment_status_id, payment_type_id
+               createdAt range, delivery_date range, amount range
+               free-text q on invoice_no / address.mobile_no
+    - Sorting: field name or prefixed with '-' for desc
+    """
+    try:
+        query: Dict[str, Any] = {}
+
+        if user_id:
+            query["user_id"] = ObjectId(str(user_id))
+        if status_id:
+            query["status_id"] = ObjectId(str(status_id))
+        if payment_type_id:
+            query["payment_types_id"] = ObjectId(str(payment_type_id))
+
+        # createdAt range
+        if created_from or created_to:
+            query["createdAt"] = {}
+            if created_from:
+                query["createdAt"]["$gte"] = _start_of_day(created_from)
+            if created_to:
+                query["createdAt"]["$lte"]  = _end_of_day(created_to)
+
+        # delivery_date range (stored as datetime in DB)
+        if delivery_from or delivery_to:
+            query["delivery_date"] = {}
+            if delivery_from:
+                query["delivery_date"]["$gte"] = _start_of_day(delivery_from)
+            if delivery_to:
+                query["delivery_date"]["$lte"] = _end_of_day(delivery_to)
+
+        # total amount range
+        if min_total is not None or max_total is not None:
+            query["total"] = {}
+            if min_total is not None:
+                query["total"]["$gte"] = float(min_total)
+            if max_total is not None:
+                query["total"]["$lte"] = float(max_total)
+
+        # free-text search on invoice_no or address.mobile_no
+        if q:
+            rx = {"$regex": q.strip(), "$options": "i"}
+            query["$or"] = [
+                {"invoice_no": rx},
+                {"address.mobile_no": rx},
+            ]
+
+        # sort parsing
+        sort_field = "createdAt"
+        sort_dir = DESCENDING
+        if sort:
+            if sort.startswith("-"):
+                sort_field = sort[1:] or "createdAt"
+                sort_dir = DESCENDING
+            else:
+                sort_field = sort
+                sort_dir = ASCENDING
+
+        # If your orders_crud.list_all supports sort, use it; otherwise query directly.
+        # ---- Direct query (robust & fast) ----
+        cursor = (
+            db["orders"]
+            .find(query)
+            .sort(sort_field, sort_dir)
+            .skip(max(0, int(skip)))
+            .limit(max(1, int(limit)))
+        )
+        docs = await cursor.to_list(length=None)
+
+        # Normalize delivery_date (datetime in DB) -> date for Pydantic FutureDate
+        for d in docs:
+            if isinstance(d.get("delivery_date"), datetime):
+                d["delivery_date"] = d["delivery_date"].date()
+
+        # Validate into output schema
+        return [OrdersOut.model_validate(d) for d in docs]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list orders: {e}")
+
+
+async def admin_update_order_service(order_id: PyObjectId, payload: OrdersUpdate) -> OrdersOut:
     """
     Admin: update order status_id.
       - If new status is 'out for delivery' → generate OTP and store it.
@@ -349,8 +500,9 @@ async def admin_update_order_status_service(order_id: PyObjectId, payload: Order
 
         sdoc = await _get_status_doc_by_id(payload.status_id)
         sname = str(sdoc.get("status", "")).strip().lower()
-
         updates: Dict[str, Any] = {"status_id": sdoc["_id"]}
+        if payload.delivery_date is not None:
+            updates["delivery_date"]=datetime.combine(payload.delivery_date, datetime.min.time(), tzinfo=timezone.utc)
 
         if sname in {"out for delivery", "out_for_delivery", "out-for-delivery"}:
             updates["delivery_otp"] = _gen_otp(6)

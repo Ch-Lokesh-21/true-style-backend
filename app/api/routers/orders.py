@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
-
+from datetime import date
 from app.api.deps import require_permission, get_current_user
 from app.schemas.object_id import PyObjectId
 from app.schemas.orders import OrdersUpdate, OrdersOut
@@ -18,10 +18,11 @@ from app.services.orders import (
     place_order_service,
     list_my_orders_service,
     get_my_order_service,
-    admin_get_order_service,
     update_my_order_status_service,
-    admin_update_order_status_service,
-    admin_delete_order_service,
+    admin_get_order_service,
+    admin_list_orders_service,
+    admin_update_order_service,
+    admin_delete_order_service
 )
 
 router = APIRouter()
@@ -34,7 +35,6 @@ router = APIRouter()
     dependencies=[Depends(require_permission("orders", "Create"))],
 )
 async def place_order(
-    user_id: PyObjectId,
     address_id: PyObjectId,
     payment_type_id: PyObjectId,
     # optional payment details (depending on payment type)
@@ -58,7 +58,6 @@ async def place_order(
         OrdersOut
     """
     return await place_order_service(
-        user_id=user_id,
         address_id=address_id,
         payment_type_id=payment_type_id,
         card_name=card_name,
@@ -101,6 +100,32 @@ async def admin_get_order(order_id: PyObjectId):
     """Admin: get any order by id."""
     return await admin_get_order_service(order_id)
 
+@router.get("/admin/orders", response_model=List[OrdersOut], dependencies=[Depends(require_permission("orders","Read"))])
+async def admin_list_orders(
+    skip: int = 0,
+    limit: int = 20,
+    user_id: Optional[PyObjectId] = None,
+    status_id: Optional[PyObjectId] = None,
+    payment_type_id: Optional[PyObjectId] = None,
+    created_from: Optional[date] = None,
+    created_to: Optional[date] = None,
+    delivery_from: Optional[date] = None,
+    delivery_to: Optional[date] = None,
+    min_total: Optional[float] = None,
+    max_total: Optional[float] = None,
+    q: Optional[str] = None,
+    sort: Optional[str] = "-createdAt",
+):
+    return await admin_list_orders_service(
+        skip=skip, limit=limit,
+        user_id=user_id, status_id=status_id,
+        payment_type_id=payment_type_id,
+        created_from=created_from, created_to=created_to,
+        delivery_from=delivery_from, delivery_to=delivery_to,
+        min_total=min_total, max_total=max_total,
+        q=q, sort=sort,
+    )
+
 
 @router.put(
     "/my/{order_id}/status",
@@ -122,17 +147,17 @@ async def update_my_order_status(
 
 
 @router.put(
-    "/{order_id}/status",
+    "/{order_id}",
     response_model=OrdersOut,
     dependencies=[Depends(require_permission("orders", "Update", "admin"))],
 )
-async def admin_update_order_status(order_id: PyObjectId, payload: OrdersUpdate):
+async def admin_update_order_(order_id: PyObjectId, payload: OrdersUpdate):
     """
     Admin: update `status_id`. Special handling:
       - If status is 'out for delivery' → generate and set a 6-digit OTP.
       - If status is 'delivered' → clear OTP.
     """
-    return await admin_update_order_status_service(order_id=order_id, payload=payload)
+    return await admin_update_order_service(order_id=order_id, payload=payload)
 
 
 @router.delete(

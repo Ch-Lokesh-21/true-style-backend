@@ -15,9 +15,6 @@ async def lifespan(app: FastAPI):
     and close them on shutdown."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await db["token_revocations"].create_index("expiresAt", expireAfterSeconds=0)
-    await db["sessions"].create_index("refresh_hash", unique=True)
-    await db["sessions"].create_index("user_id")
     await clear_permissions_cache()
 
     yield  # <--- app runs while this yields
@@ -131,8 +128,8 @@ modal.querySelectorAll('*').forEach(el => {
                             <option value="Ratings">Ratings</option>
                             <option value="Backup">Backup</option>
                             <option value="Restore">Restore</option>
-                            <optioin value="Files">Files</option>
-                            <optioin value="Coupons">Coupons</option>
+                            <option value="Files">Files</option>
+                            <option value="Coupons">Coupons</option>
                             <option value="Payments">Payments</option>
                             <option value="Logs">Logs</option>
                             <option value="Contact Us">Contact Us</option>

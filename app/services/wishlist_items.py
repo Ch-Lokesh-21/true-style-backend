@@ -90,11 +90,10 @@ async def move_wishlist_item_to_cart(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid or missing cart_id/wishlist_id for current user")
 
-    # Load snapshot for return value after commit
+    # Snapshot for API return
     snapshot = await db["wishlist_items"].find_one({"_id": item_id})
     if not snapshot:
         raise HTTPException(status_code=404, detail="Wishlist item not found")
-
     if str(snapshot.get("wishlist_id")) != str(wishlist_id):
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -102,26 +101,34 @@ async def move_wishlist_item_to_cart(
 
     async with await db.client.start_session() as session:
         async with session.start_transaction():
-            # Upsert/merge cart line atomically
             filter_doc = {
                 "cart_id": cart_id,
                 "product_id": product_id,
                 "size": normalized_size,
             }
 
+            # Use an update pipeline (MongoDB 4.2+). No $inc/$setOnInsert conflicts.
             await db["cart_items"].update_one(
                 filter_doc,
-                {
-                    "$setOnInsert": {
-                        "cart_id": cart_id,
-                        "product_id": product_id,
-                        "size": normalized_size,
-                        "quantity": 0,  # becomes 1 via $inc
-                        "createdAt": datetime.now(timezone.utc),
-                    },
-                    "$inc": {"quantity": 1},
-                    "$currentDate": {"updatedAt": True},
-                },
+                [
+                    {
+                        "$set": {
+                            # ensure keys exist on insert and stay consistent on update
+                            "cart_id": cart_id,
+                            "product_id": product_id,
+                            "size": normalized_size,
+
+                            # quantity = (existing or 0) + 1
+                            "quantity": {
+                                "$add": [ {"$ifNull": ["$quantity", 0]}, 1 ]
+                            },
+
+                            # set createdAt only once; always refresh updatedAt
+                            "createdAt": {"$ifNull": ["$createdAt", "$$NOW"]},
+                            "updatedAt": "$$NOW",
+                        }
+                    }
+                ],
                 upsert=True,
                 session=session,
             )
@@ -130,7 +137,6 @@ async def move_wishlist_item_to_cart(
             if del_res.deleted_count != 1:
                 raise HTTPException(status_code=400, detail="Unable to move")
 
-    # return the pre-delete snapshot as the API originally did
     return WishlistItemsOut.model_validate(snapshot)
 
 

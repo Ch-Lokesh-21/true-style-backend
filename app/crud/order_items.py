@@ -5,7 +5,7 @@ from bson import ObjectId
 from app.core.database import db
 from app.utils.mongo import stamp_create, stamp_update
 from app.schemas.object_id import PyObjectId
-from app.schemas.order_items import OrderItemsCreate, OrderItemsUpdate, OrderItemsOut
+from app.schemas.order_items import OrderItemsCreate, OrderItemsOut
 
 COLL = "order_items"
 
@@ -41,19 +41,19 @@ async def get_one(_id: PyObjectId) -> Optional[OrderItemsOut]:
     doc = await db[COLL].find_one({"_id": oid})
     return _to_out(doc) if doc else None
 
-async def update_one(_id: PyObjectId, payload: OrderItemsUpdate) -> Optional[OrderItemsOut]:
-    try:
-        oid = ObjectId(str(_id))
-    except Exception:
-        return None
+# async def update_one(_id: PyObjectId, payload: OrderItemsUpdate) -> Optional[OrderItemsOut]:
+#     try:
+#         oid = ObjectId(str(_id))
+#     except Exception:
+#         return None
 
-    data = {k: v for k, v in payload.model_dump(mode="python",exclude_none=True).items() if v is not None}
-    if not data:
-        return None
+#     data = {k: v for k, v in payload.model_dump(mode="python",exclude_none=True).items() if v is not None}
+#     if not data:
+#         return None
 
-    await db[COLL].update_one({"_id": oid}, {"$set": stamp_update(data)})
-    doc = await db[COLL].find_one({"_id": oid})
-    return _to_out(doc) if doc else None
+#     await db[COLL].update_one({"_id": oid}, {"$set": stamp_update(data)})
+#     doc = await db[COLL].find_one({"_id": oid})
+#     return _to_out(doc) if doc else None
 
 async def delete_one(_id: PyObjectId) -> Optional[bool]:
     try:

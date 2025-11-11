@@ -5,13 +5,13 @@ from typing import List, Optional, Dict, Any
 from bson import ObjectId
 from app.core.database import db
 from app.schemas.object_id import PyObjectId
-from app.schemas.order_items import OrderItemsOut
+from app.schemas.orders import OrdersOut
 
-COLL = "order_items"
+COLL = "orders"
 
 
-def _to_out(doc: dict) -> OrderItemsOut:
-    return OrderItemsOut.model_validate(doc)
+def _to_out(doc: dict) -> OrdersOut:
+    return OrdersOut.model_validate(doc)
 
 
 def _to_oid(v: Any) -> Optional[ObjectId]:
@@ -45,7 +45,7 @@ async def list_all(
     skip: int = 0,
     limit: int = 50,
     query: Dict[str, Any] | None = None,
-) -> List[OrderItemsOut]:
+) -> List[OrdersOut]:
     q = _normalize_query(query)
     cur = (
         db[COLL]
@@ -58,7 +58,7 @@ async def list_all(
     return [_to_out(d) for d in docs]
 
 
-async def get_one(_id: PyObjectId) -> Optional[OrderItemsOut]:
+async def get_one(_id: PyObjectId) -> Optional[OrdersOut]:
     oid = _to_oid(_id)
     if not oid:
         return None

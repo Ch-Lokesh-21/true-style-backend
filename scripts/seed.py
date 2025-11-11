@@ -29,7 +29,7 @@ async def safe_create_index(coll, keys, **opts):
 # Collections
 # -----------------------
 ALL_COLLECTIONS: List[str] = [
-    "user_roles", "permissions", "role_permissions",
+    "user_roles", "permissions", "role_permissions","sessions","token_revocations",
     "user_status", "order_status", "return_status", "exchange_status",
     "brands", "product_types", "occasions", "categories", "review_status",
     "payment_types", "payment_status", "coupons_status",
@@ -43,7 +43,7 @@ ALL_COLLECTIONS: List[str] = [
     "user_reviews", "user_ratings",
     "returns", "exchanges",
     "payments", "card_details", "upi_details",
-    "coupons", "subscriptions",
+    "coupons",
     "backup_logs", "restore_logs",
 ]
 
@@ -67,12 +67,13 @@ SYSTEM_LOG_COLLECTIONS = {"backup_logs", "restore_logs"}
 
 USER_READ_BLOCKED = {
     "backup_logs", "restore_logs", "dashboard", "contact_us", "login_logs", "register_logs", "logout_logs"
+    "permissions", "role_permissions","sessions","token_revocations"
 }
 
 USER_WRITABLE_COLLECTIONS = {
     "users", "user_address", "wishlists", "wishlist_items",
     "carts", "cart_items", "orders", "order_items",
-    "user_reviews", "user_ratings", "returns", "exchanges", "subscriptions",
+    "user_reviews", "user_ratings", "returns", "exchanges",
     "payments", "card_details", "upi_details"
 }
 
@@ -86,6 +87,7 @@ USER_DELETE_COLLECTIONS = {
 UNIQUE_FIELDS: Dict[str, List[str]] = {
     "user_roles": ["role"],
     "permissions": ["resource_name"],
+    "sessions": ["refresh_hash"],
     "user_status": ["status"],
     "order_status": ["status"],
     "return_status": ["status"],
@@ -116,6 +118,7 @@ UNIQUE_FIELDS: Dict[str, List[str]] = {
 
 FK_INDEXES: Dict[str, List[str]] = {
     "role_permissions": ["role_id", "permission_id"],
+    "sessions": ["user_id"],
     "users": ["user_status_id", "role_id"],
     "products": ["brand_id", "occasion_id", "category_id", "product_type_id"],
     "product_images": ["product_id"],
@@ -134,7 +137,6 @@ FK_INDEXES: Dict[str, List[str]] = {
     "card_details": ["payment_id"],
     "upi_details": ["payment_id"],
     "coupons": ["coupons_status_id"],
-    "subscriptions": ["user_id"],
 }
 
 COMPOUND_UNIQUES = {

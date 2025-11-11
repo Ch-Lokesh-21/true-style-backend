@@ -101,6 +101,7 @@ async def token_refresh(
     Returns:
         TokenRotatedOut: New access and refresh token (rotated).
     """
+    print(request.cookies)
     return await refresh_token_service(response, request, rt)
 
 
@@ -129,6 +130,8 @@ async def logout(
     Returns:
         MessageOut: Confirmation message.
     """
+    print(request.cookies)
+    print(rt)
     return await logout_service(response, request, rt, token,session)
 
 

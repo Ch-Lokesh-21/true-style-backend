@@ -59,9 +59,8 @@ def _set_refresh_cookie(response: Response, token: str, exp_ts: int) -> None:
         key=settings.REFRESH_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=settings.REFRESH_COOKIE_SECURE,
-        samesite=settings.REFRESH_COOKIE_SAMESITE,
-        path=settings.REFRESH_COOKIE_PATH,
+        secure=False,
+        samesite="none",
         max_age=max_age,
         expires=exp_ts,
     )
@@ -71,7 +70,6 @@ def _clear_refresh_cookie(response: Response) -> None:
     """Delete refresh-token cookie."""
     response.delete_cookie(
         key=settings.REFRESH_COOKIE_NAME,
-        path=settings.REFRESH_COOKIE_PATH,
     )
 
 
