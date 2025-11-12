@@ -6,7 +6,7 @@ import re
 from app.core.database import db
 from app.utils.mongo import stamp_create, stamp_update
 from app.schemas.object_id import PyObjectId
-from app.schemas.products import ProductsCreate, ProductsUpdate, ProductsOut
+from app.schemas.products import ProductsCreate, ProductsUpdate, ProductsOut, CtProductsOut
 
 COLL = "products"
 
@@ -21,6 +21,9 @@ RELATED_COLLECTIONS: Dict[str, str] = {
 
 def _to_out(doc: dict) -> ProductsOut:
     return ProductsOut.model_validate(doc)
+
+def _to_out_ct(doc: dict) -> CtProductsOut:
+    return CtProductsOut.model_validate(doc)
 
 
 async def create(payload: ProductsCreate) -> Optional[ProductsOut]:
@@ -91,7 +94,60 @@ async def list_all(
         return [_to_out(d) for d in docs]
     except Exception:
         return []
+async def list_all_ct(
+    skip: int = 0,
+    limit: int = 50,
+    q: Optional[str] = None,
+    brand_id: Optional[PyObjectId] = None,
+    category_id: Optional[PyObjectId] = None,
+    occasion_id: Optional[PyObjectId] = None,
+    product_type_id: Optional[PyObjectId] = None,
+    color: Optional[str] = None,
+    out_of_stock: Optional[bool] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+) -> List[ProductsOut]:
+    try:
+        query: Dict[str, Any] = {}
 
+        if brand_id is not None:
+            query["brand_id"] = ObjectId(str(brand_id))
+        if category_id is not None:
+            query["category_id"] = ObjectId(str(category_id))
+        if occasion_id is not None:
+            query["occasion_id"] = ObjectId(str(occasion_id))
+        if product_type_id is not None:
+            query["product_type_id"] = ObjectId(str(product_type_id))
+        if color is not None:
+            query["color"] = color
+        if out_of_stock is not None:
+            query["out_of_stock"] = out_of_stock
+        if min_price is not None or max_price is not None:
+            pr: Dict[str, Any] = {}
+            if min_price is not None:
+                pr["$gte"] = min_price
+            if max_price is not None:
+                pr["$lte"] = max_price
+            if pr:
+                query["price"] = pr
+        if q:
+            safe = re.escape(q)
+            query["$or"] = [
+                {"name": {"$regex": safe, "$options": "i"}},
+                {"description": {"$regex": safe, "$options": "i"}},
+            ]
+
+        cursor = (
+            db[COLL]
+            .find(query)
+            .skip(max(0, int(skip)))
+            .limit(max(0, int(limit)))
+            .sort("createdAt", -1)
+        )
+        docs = await cursor.to_list(length=limit)
+        return [_to_out_ct(d) for d in docs]
+    except Exception:
+        return []
 
 async def get_one(_id: PyObjectId) -> Optional[ProductsOut]:
     try:

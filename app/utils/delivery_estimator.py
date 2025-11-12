@@ -153,20 +153,3 @@ def expected_delivery_window(
         "deliver_earliest": earliest,
         "deliver_latest": latest,
     }
-
-# -----------------------------
-# Example usage
-# -----------------------------
-if __name__ == "__main__":
-    examples = [
-        ("110001", "110092"),  # Delhi to Delhi (intra-city)
-        ("560001", "500081"),  # Bengaluru to Hyderabad (intra-region)
-        ("400001", "700001"),  # Mumbai to Kolkata (inter-region, metro-to-metro)
-        ("110001", "744101"),  # Delhi to Andaman (remote)
-    ]
-    for s, d in examples:
-        out_std = expected_delivery_window(s, d, service_level="standard")
-        out_exp = expected_delivery_window(s, d, service_level="express")
-        print(f"{s} -> {d} (STANDARD): {out_std}")
-        print(f"{s} -> {d} (EXPRESS) : {out_exp}")
-        print("-" * 80)

@@ -19,13 +19,14 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import require_permission
 from app.schemas.object_id import PyObjectId
-from app.schemas.products import ProductsOut
+from app.schemas.products import ProductsOut, CtProductsOut
 from app.services.products import (
     create_item_service,
     list_items_service,
     get_item_service,
     update_item_service,
     delete_item_service,
+    list_ct_items_service
 )
 
 router = APIRouter()
@@ -82,7 +83,7 @@ async def create_item(
     )
 
 
-@router.get("/", response_model=List[ProductsOut])
+@router.get("/admin", response_model=List[ProductsOut], dependencies=[Depends(require_permission("products","Read","admin"))])
 async def list_items(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
@@ -109,7 +110,32 @@ async def list_items(
         color=color, out_of_stock=out_of_stock,
         min_price=min_price, max_price=max_price,
     )
+@router.get("/", response_model=List[CtProductsOut])
+async def list_items(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    q: Optional[str] = Query(None, description="Search name/description (case-insensitive)"),
+    brand_id: Optional[PyObjectId] = Query(None),
+    category_id: Optional[PyObjectId] = Query(None),
+    occasion_id: Optional[PyObjectId] = Query(None),
+    product_type_id: Optional[PyObjectId] = Query(None),
+    color: Optional[str] = Query(None),
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+):
+    """
+    List products with rich filters and pagination.
 
+    Notes:
+        - Validates min_price/max_price relationship.
+    """
+    return await list_ct_items_service(
+        skip=skip, limit=limit, q=q,
+        brand_id=brand_id, category_id=category_id,
+        occasion_id=occasion_id, product_type_id=product_type_id,
+        color=color, out_of_stock=False,
+        min_price=min_price, max_price=max_price,
+    )
 
 @router.get("/{item_id}", response_model=ProductsOut)
 async def get_item(item_id: PyObjectId):

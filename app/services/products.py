@@ -18,7 +18,7 @@ from fastapi import HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.schemas.object_id import PyObjectId
-from app.schemas.products import ProductsCreate, ProductsUpdate, ProductsOut
+from app.schemas.products import ProductsCreate, ProductsUpdate, ProductsOut, CtProductsOut
 from app.crud import products as crud
 from app.utils.gridfs import (
     upload_image, replace_image, delete_image, _extract_file_id_from_url
@@ -169,6 +169,35 @@ async def list_items_service(
     _validate_numeric_ranges(min_price=min_price, max_price=max_price)
     try:
         return await crud.list_all(
+            skip=skip, limit=limit, q=q,
+            brand_id=brand_id, category_id=category_id,
+            occasion_id=occasion_id, product_type_id=product_type_id,
+            color=color, out_of_stock=out_of_stock,
+            min_price=min_price, max_price=max_price,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list products: {e}")
+
+async def list_ct_items_service(
+    *,
+    skip: int,
+    limit: int,
+    q: Optional[str],
+    brand_id: Optional[PyObjectId],
+    category_id: Optional[PyObjectId],
+    occasion_id: Optional[PyObjectId],
+    product_type_id: Optional[PyObjectId],
+    color: Optional[str],
+    out_of_stock: Optional[bool],
+    min_price: Optional[float],
+    max_price: Optional[float],
+) -> List[CtProductsOut]:
+    """
+    List products with filters and pagination.
+    """
+    _validate_numeric_ranges(min_price=min_price, max_price=max_price)
+    try:
+        return await crud.list_all_ct(
             skip=skip, limit=limit, q=q,
             brand_id=brand_id, category_id=category_id,
             occasion_id=occasion_id, product_type_id=product_type_id,

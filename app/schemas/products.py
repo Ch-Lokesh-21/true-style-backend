@@ -118,3 +118,48 @@ class ProductsOut(ProductsBase):
         "json_encoders": {PyObjectId: str},
         "extra": "ignore",
     }
+
+class CtProductsOut(BaseModel):
+    id: PyObjectId = Field(alias="_id")
+    createdAt: datetime
+    updatedAt: datetime
+    brand_id: PyObjectId
+    occasion_id: PyObjectId
+    category_id: PyObjectId
+    product_type_id: PyObjectId
+    name: Name
+    description: Description
+    rating: Optional[Rating] = None
+    total_price: Money
+
+    color: Color
+    out_of_stock: bool
+    thumbnail_url: UrlStr
+
+    # NEW FIELD
+    quantity: Quantity
+
+    # ---- Normalizers & URL validation ----
+    @field_validator("name", "description", "color", mode="before")
+    @classmethod
+    def _strip_text(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("Field cannot be empty.")
+        return v
+
+    @field_validator("thumbnail_url", mode="before")
+    @classmethod
+    def _validate_url(cls, v):
+        # Validate with AnyUrl then return as plain string for Mongo
+        return str(_URL.validate_python(v))
+
+    
+
+    model_config = {
+        "populate_by_name": True,
+        "from_attributes": False,
+        "json_encoders": {PyObjectId: str},
+        "extra": "ignore",
+    }

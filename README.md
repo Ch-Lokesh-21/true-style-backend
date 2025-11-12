@@ -5,7 +5,7 @@ True Style is a production‑grade **FastAPI** backend for a fashion e‑commerc
 
 ---
 
-## 1) Problem Statement (from SRS, condensed)
+## 1) Problem Statement
 Traditional apparel shopping creates friction—customers struggle with discovery, sizing, and order reliability, while admins lack precise control over catalogs, inventory, promotions, and analytics. True Style streamlines the customer journey and gives the admin rich management & insights.
 
 **Actors:** Admin, Customer (end‑user).
